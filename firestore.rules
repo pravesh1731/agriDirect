@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection: allow authenticated users to create their own profile
+    // and allow only the owner to read/update/delete their document.
+    match /users/{userId} {
+      // allow creating your own user document
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // allow authenticated users to read user profiles (public fields like displayName/location)
+      allow read: if request.auth != null;
+
+      // owner-only update/delete
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Products: public read for marketplace browsing. Only the farmer (owner) may create/update/delete
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.farmerId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.farmerId == request.auth.uid;
+    }
+
+    // Top-level orders: authenticated users may create orders (buyer creates)
+    // Read/update only allowed for buyer or farmer referenced in the order doc
+    match /orders/{orderId} {
+      allow create: if request.auth != null && request.resource.data.buyerId == request.auth.uid;
+
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.buyerId || request.auth.uid == resource.data.farmerId
+      );
+
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.farmerId || request.auth.uid == resource.data.buyerId
+      );
+
+      // prevent deletions of top-level orders from clients
+      allow delete: if false;
+    }
+
+    // Per-user order copies (buyer & farmer)
+    // Buyer subcollection: buyer can create/read/update/delete their own copy
+    match /buyers/{buyerId}/orders/{orderId} {
+      // allow the buyer to create their own copy only if buyerId matches and the payload lists that buyerId
+      allow create: if request.auth != null && request.auth.uid == buyerId && request.resource.data.buyerId == buyerId;
+      allow read, update, delete: if request.auth != null && request.auth.uid == buyerId;
+    }
+
+    // Farmer subcollection: allow buyer to create the farmer copy (create-only) when placing an order,
+    // but afterwards only the farmer (owner) may read/update/delete that copy.
+    match /farmers/{farmerId}/orders/{orderId} {
+      // allow creation of farmer copy by the buyer placing the order; enforce buyerId and farmerId in payload
+      allow create: if request.auth != null
+                    && request.resource.data.buyerId == request.auth.uid
+                    && request.resource.data.farmerId == farmerId;
+
+      // after creation, only farmer may read/update/delete
+      allow read, update, delete: if request.auth != null && request.auth.uid == farmerId;
+    }
+
+    // Chats: top-level chat threads
+    // Each chat document must include a `participants` array with UIDs of participants.
+    match /chats/{chatId} {
+      // Creation: require participants list and that the creating user is included.
+      allow create: if request.auth != null
+                    && request.resource.data.participants is list
+                    && request.auth.uid in request.resource.data.participants;
+
+      // Reads (get/list): allow only authenticated users who are participants OR who are the buyer/farmer referenced
+      // This also permits queries using arrayContains on participants because each matched document will satisfy the condition.
+      allow get, list: if request.auth != null && (
+        // participants array explicitly contains the authenticated user
+        (resource.data.participants is list && request.auth.uid in resource.data.participants)
+        // OR the document includes explicit buyerId/farmerId fields that match the authenticated user
+        || (resource.data.buyerId is string && resource.data.buyerId == request.auth.uid)
+        || (resource.data.farmerId is string && resource.data.farmerId == request.auth.uid)
+      );
+
+      // Update: only participants may update the chat doc
+      allow update: if request.auth != null && resource.data.participants is list && request.auth.uid in resource.data.participants;
+
+      // Disallow client-side deletes for chats
+      allow delete: if false;
+
+      // Messages subcollection: append-only messages for the chat
+      match /messages/{messageId} {
+        // Read: only participants of the parent chat can read messages
+        allow read: if request.auth != null
+                    && exists(/databases/$(database)/documents/chats/$(chatId))
+                    && (
+                      (get(/databases/$(database)/documents/chats/$(chatId)).data.participants is list && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
+                      || (get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId is string && request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId)
+                      || (get(/databases/$(database)/documents/chats/$(chatId)).data.farmerId is string && request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.farmerId)
+                    );
+
+        // Create: only a participant (buyer or farmer) can create a message, and senderId must equal auth.uid.
+        // Also require that the parent chat exists and contains the participant.
+        allow create: if request.auth != null
+                      && request.resource.data.senderId is string
+                      && request.resource.data.senderId == request.auth.uid
+                      && request.resource.data.text is string
+                      && exists(/databases/$(database)/documents/chats/$(chatId))
+                      && (
+                        (get(/databases/$(database)/documents/chats/$(chatId)).data.participants is list && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
+                        || (get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId is string && request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId)
+                        || (get(/databases/$(database)/documents/chats/$(chatId)).data.farmerId is string && request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.farmerId)
+                      );
+
+        // Prevent clients from editing or deleting messages (append-only)
+        allow update, delete: if false;
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "694539643985",
+    "project_id": "agridirect-34e78",
+    "storage_bucket": "agridirect-34e78.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:694539643985:android:95d0a30f0db63757b41c70",
+        "android_client_info": {
+          "package_name": "com.example.agri_direct"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "694539643985-5pqqj1r24lvrlro4qpku6gol438k0jvb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBh9qKuPRxXJ6fbOOD-qFbjtUQzYOs0I-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "694539643985-5pqqj1r24lvrlro4qpku6gol438k0jvb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
