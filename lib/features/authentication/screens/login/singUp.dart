@@ -1,13 +1,10 @@
-import 'package:agri_direct/common/widgets/logo/icon.dart';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:agri_direct/common/widgets/logo/icon.dart';
+import 'package:agri_direct/common/widgets/textField/UtextField.dart';
+import 'package:flutter/material.dart';
 import '../../../../common/widgets/buttons/elevated_button.dart';
 import '../../../../utils/constants/colors.dart';
 import '../../../../utils/constants/sizes.dart';
-import '../../../../common/widgets/location_field.dart';
-
 import 'signIn.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -20,136 +17,6 @@ class SignUpScreen extends StatefulWidget {
 class _SignUpScreenState extends State<SignUpScreen> {
   bool isPasswordVisible = false;
   String selectedTab = 'Farmer'; // 'Farmer' or 'Buyer'
-  final TextEditingController fullNameController = TextEditingController();
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController locationController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
-  bool isLoading = false;
-  String? errorMessage;
-
-  bool _isValidEmail(String email) {
-    final emailReg = RegExp(r"^[\w-.]+@([\w-]+\.)+[\w-]{2,4}");
-    return emailReg.hasMatch(email);
-  }
-
-  String _friendlyAuthMessage(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'email-already-in-use':
-        return 'This email is already registered. Try signing in or use a different email.';
-      case 'invalid-email':
-        return 'The email address is invalid. Please correct it.';
-      case 'weak-password':
-        return 'The password is too weak. Please use at least 6 characters.';
-      case 'operation-not-allowed':
-        return 'This sign up method is not enabled. Check Firebase console.';
-      case 'network-request-failed':
-        return 'Network error. Please check your internet connection.';
-      default:
-        return e.message ?? 'Authentication error: ${e.code}';
-    }
-  }
-
-  Future<void> signUpWithEmail() async {
-    setState(() { isLoading = true; errorMessage = null; });
-
-    // client-side validation
-    if (fullNameController.text.trim().isEmpty) {
-      setState((){ isLoading = false; });
-      showSnackBar(context, 'Please enter your full name');
-      return;
-    }
-    if (emailController.text.trim().isEmpty || !_isValidEmail(emailController.text.trim())) {
-      setState((){ isLoading = false; });
-      showSnackBar(context, 'Please enter a valid email address');
-      return;
-    }
-    if (passwordController.text.trim().length < 6) {
-      setState((){ isLoading = false; });
-      showSnackBar(context, 'Password must be at least 6 characters');
-      return;
-    }
-
-    try {
-      final userCred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
-      final uid = userCred.user?.uid;
-      if (uid != null) {
-        // Show success immediately after authentication succeeds
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Signup successful. Please sign in.'),
-            duration: Duration(seconds: 2),
-          ));
-        }
-        // Attempt to save profile to Firestore in background. If it fails, show a warning but continue.
-        _writeUserDocWithRetry(uid, {
-          'uid': uid,
-          'email': emailController.text.trim(),
-          'displayName': fullNameController.text.trim(),
-          'location': locationController.text.trim(),
-          'role': selectedTab,
-          'createdAt': FieldValue.serverTimestamp(),
-        }).catchError((e) {
-          // If permission error, show actionable message
-          final msg = (e is FirebaseException && e.code == 'permission-denied')
-              ? 'Profile save failed: Firestore permission denied. Please check your security rules.'
-              : 'Profile save failed: ${e.toString()}';
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
-        });
-        // Small delay so the user sees the snackbar
-        await Future.delayed(const Duration(milliseconds: 900));
-        if (!mounted) return;
-        // After signup, show success message then navigate user to the Sign In screen
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const SignInScreen()),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      final msg = _friendlyAuthMessage(e);
-      setState(() { errorMessage = msg; });
-      showSnackBar(context, msg);
-    } on FirebaseException catch (e) {
-      // Catch Firestore permission errors and show a more actionable message
-      if (e.code == 'permission-denied') {
-        setState(() { errorMessage = 'Firestore permission denied — check your security rules (users collection write requires authenticated user).'; });
-      } else {
-        setState(() { errorMessage = e.message; });
-      }
-    } catch (e) {
-      final msg = e.toString();
-      setState(() { errorMessage = msg; });
-      showSnackBar(context, msg);
-    } finally {
-      if (mounted) setState(() { isLoading = false; });
-    }
-  }
-
-  Future<void> _writeUserDocWithRetry(String uid, Map<String, dynamic> data) async {
-    const int maxAttempts = 4;
-    int attempt = 0;
-    int delayMs = 300;
-    while (attempt < maxAttempts) {
-      attempt++;
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(uid).set(data);
-        return;
-      } on FirebaseException catch (e) {
-        // If permission-denied, it may be a transient auth token propagation issue right after sign-up.
-        if (e.code == 'permission-denied' && attempt < maxAttempts) {
-          // wait and retry
-          await Future.delayed(Duration(milliseconds: delayMs));
-          delayMs *= 2;
-          continue;
-        }
-        rethrow;
-      }
-    }
-    // If we exit loop without returning, throw a generic exception
-    throw FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied', message: 'Max retries reached');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -190,10 +57,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ),
               ),
-              if (errorMessage != null) ...[
-                SizedBox(height: 12),
-                Center(child: Text(errorMessage!, style: TextStyle(color: Colors.red))),
-              ],
               SizedBox(height: USizes.spaceBteSections),
 
               // Farmer/Buyer Toggle
@@ -288,22 +151,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: fullNameController,
-                decoration: InputDecoration(
-                  hintText: 'Enter your full name',
-                  prefixIcon: const Icon(
-                    Icons.person_outlined,
-                    color: UColors.textSecondaryLight,
-                  ),
-                  filled: true,
-                  fillColor: UColors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: UColors.borderPrimaryLight),
-                  ),
-                ),
-              ),
+              UTextField("Enter your full name", Icons.person_outlined),
                SizedBox(height: USizes.spaceBtwItems),
 
               // Email Field
@@ -316,23 +164,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  hintText: 'Enter your email',
-                  prefixIcon: const Icon(
-                    Icons.email_outlined,
-                    color: UColors.textSecondaryLight,
-                  ),
-                  filled: true,
-                  fillColor: UColors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: UColors.borderPrimaryLight),
-                  ),
-                ),
-              ),
+              UTextField("Enter your email", Icons.email_outlined),
               const SizedBox(height: USizes.spaceBtwItems),
 
               // Location Field
@@ -345,12 +177,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              LocationField(
-                controller: locationController,
-                onSelected: (address, lat, lng) {
-                  // you can store lat/lng in state if needed
-                },
-              ),
+              UTextField("Enter your location", Icons.location_on_outlined),
               const SizedBox(height: USizes.spaceBtwItems),
 
               // Password Field
@@ -363,8 +190,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: passwordController,
+              TextField(
                 obscureText: !isPasswordVisible,
                 decoration: InputDecoration(
                   hintText: 'Enter your password',
@@ -390,6 +216,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       color: UColors.borderPrimaryLight,
                     ),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: UColors.borderPrimaryLight,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: UColors.primary,
+                      width: 2,
+                    ),
+                  ),
                 ),
               ),
               SizedBox(height: USizes.spaceBteSections),
@@ -397,8 +236,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
               // Create Account Button
               UElevatedButton(
                 gradient: UColors.primaryGradient,
-                onPressed: () { if (isLoading) return; signUpWithEmail(); },
-                child: isLoading ? const Text('Creating...') : const Text(
+                onPressed: () {
+                  // TODO: Implement sign up logic
+                },
+                child: const Text(
                   'Create Account',
                   style: TextStyle(
                     fontSize: 16,
